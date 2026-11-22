@@ -79,6 +79,23 @@ Invoke-RestMethod "$base/api/articles/$id/export" -Headers $headers
 ограничивают только поиск по списку. Запуск по расписанию можно организовать внешним
 планировщиком, вызывающим этот же эндпоинт. Встроенного расписания в первой версии нет.
 
+## Просмотр результатов локального теста
+
+При работающем API можно сформировать HTML-снимок завершённого задания (его UUID
+возвращает `POST /api/parse-jobs`):
+
+```powershell
+.venv/Scripts/python -m scripts.demo_report --job-id UUID-ЗАДАНИЯ
+.venv/Scripts/python -m http.server 8003 --bind 127.0.0.1 --directory .scratch/preview
+```
+
+Откройте <http://127.0.0.1:8003/>. Отчёт содержит поиск, полные тексты, ссылки на оригиналы
+и `results.json`. В нём нет API-ключа. Картинки, ещё не сохранённые в `file_service`,
+показываются напрямую с сайта-источника с отдельным пояснением. Это статический снимок:
+после нового парсинга нужно повторить команду формирования отчёта.
+Swagger доступен на <http://127.0.0.1:8002/docs>; для `/api/*` в Authorize укажите
+значение `API_KEY` из локального `.env`.
+
 ## Docker / PostgreSQL
 
 Создайте `.env` и задайте `API_KEY` и `POSTGRES_PASSWORD` (для URI используйте
@@ -98,6 +115,38 @@ Compose поднимает только БД парсера, миграции, A
 `NEWS_SERVICE_URL=http://host.docker.internal:8000` — порты замените своими.
 `FILE_PUBLIC_URL` должен быть доступен потребителю API, например браузеру.
 Существующие сервисы этот compose не запускает и не перенастраивает.
+
+## Совместный локальный тест с настоящим file_service
+
+Из `news_parser` при работающем Docker Desktop:
+
+```powershell
+.venv/Scripts/python -m scripts.configure_files
+docker compose --env-file .scratch/runtime/integration.env -f compose.integration.yml up --build -d
+```
+
+Затем перезапустите API и worker парсера, чтобы они прочитали новый токен из `.env`.
+Тестовый `file_service` доступен на `http://localhost:8001`, его PostgreSQL и файлы
+хранятся в отдельных постоянных Docker-томах. Сборка читает оригинальный `../file_service`;
+его исходники и настройки не редактируются. Внешний реестр `integration/file-services.json`
+монтируется только для чтения и регистрирует идентичность `news-parser` с отдельным токеном.
+Пароли находятся в игнорируемом `.scratch/runtime/integration.env`.
+
+Запустите новое задание парсинга через API. После его завершения:
+
+```powershell
+.venv/Scripts/python -m scripts.verify_files --job-id UUID-ЗАДАНИЯ
+.venv/Scripts/python -m scripts.demo_report --job-id UUID-ЗАДАНИЯ
+```
+
+Проверка читает метаданные и бинарные файлы из настоящего `file_service`, проверяет
+формат WebP, размеры, длину содержимого и запрет доступа к внутреннему API без токена.
+Отчёт `.scratch/runtime/files-verification.json` содержит ID и контрольные суммы файлов.
+Остановка тестовых контейнеров с сохранением данных:
+
+```powershell
+docker compose --env-file .scratch/runtime/integration.env -f compose.integration.yml down
+```
 
 ## Эндпоинты
 
