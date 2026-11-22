@@ -1,6 +1,10 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["src"]
+markers = [
+    "live: opt-in checks against the real FSP website",
+    "integration: opt-in checks against running services",
+]
 
 [tool.ruff]
 line-length = 100

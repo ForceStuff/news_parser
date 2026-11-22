@@ -7,5 +7,3 @@ pytest-cache-files-*/
 *.db
 *.db-*
 *.worker.lock
-.scratch/
-tests/fixtures/fsp_listing.html

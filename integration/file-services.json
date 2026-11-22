@@ -1,8 +1,0 @@
-{
-  "services": {
-    "news-parser": {
-      "base_url": "http://host.docker.internal:8002",
-      "upload_token_env": "PARSER_UPLOAD_TOKEN"
-    }
-  }
-}

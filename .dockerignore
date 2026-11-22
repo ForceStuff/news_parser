@@ -1,7 +1,7 @@
 *
 !requirements.txt
-!app/
-!app/**
+!src/
+!src/**
 !migrations/
 !migrations/**
 !alembic.ini

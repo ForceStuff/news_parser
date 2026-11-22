@@ -1,22 +1,25 @@
 """Opt-in live read-only check. Does not call news_service or file_service."""
 
-import argparse
-import json
+import os
+
+import pytest
 
 from app.adapters.fsp import FSP_URL, FspAdapter
 from app.clients import normalize_image
 from app.config import get_settings
 from app.fetcher import PublicFetcher
 
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(os.getenv("RUN_LIVE_TESTS") != "1", reason="Set RUN_LIVE_TESTS=1"),
+]
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=2, choices=range(1, 6))
-    args = parser.parse_args()
+
+def test_fsp_article_and_images():
     settings = get_settings()
     adapter = FspAdapter()
     fetcher = PublicFetcher(settings, adapter.allowed_hosts)
-    cards = adapter.discover(fetcher, FSP_URL, 1, args.limit)
+    cards = adapter.discover(fetcher, FSP_URL, 1, 1)
     result = []
     for card in cards:
         article = adapter.parse(fetcher.html(card.url), card.url, card.cover_url)
@@ -35,8 +38,4 @@ def main():
                 "images": images,
             }
         )
-    print(json.dumps(result, ensure_ascii=True, indent=2))
-
-
-if __name__ == "__main__":
-    main()
+    assert result and all(row["body_characters"] > 0 and row["images"] for row in result)
