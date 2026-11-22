@@ -1,0 +1,50 @@
+name: news-parser
+x-parser: &parser
+  build: .
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://news_parser:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/news_parser
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: news_parser
+      POSTGRES_USER: news_parser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - parser-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U news_parser -d news_parser"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *parser
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+  api:
+    <<: *parser
+    ports:
+      - "127.0.0.1:8002:8002"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+  worker:
+    <<: *parser
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+volumes:
+  parser-db:

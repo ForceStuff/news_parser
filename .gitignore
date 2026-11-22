@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+pytest-cache-files-*/
+.ruff_cache/
+.env
+*.db
+*.db-*
+*.worker.lock
+.scratch/
+tests/fixtures/fsp_listing.html
