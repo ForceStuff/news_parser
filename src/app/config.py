@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     file_public_url: str = "http://localhost:8001"
     file_service_token: str = ""
     news_service_url: str = "http://localhost:8000"
+    news_parser_token: str = ""
+    auto_import_enabled: bool = False
+    auto_import_interval_seconds: int = Field(1800, gt=0)
     news_export_enabled: bool = False
     news_user_id: str = ""
     news_user_roles: str = "admin"

@@ -3,11 +3,13 @@
 import argparse
 import logging
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
+from datetime import timedelta
 
 from sqlalchemy import select, text
 
 from app.adapters import get_adapter
+from app.clients import NewsImportClient
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.fetcher import PublicFetcher
@@ -63,6 +65,26 @@ def recover(db):
     db.commit()
 
 
+def enqueue_due_imports(db, settings):
+    if not settings.auto_import_enabled:
+        return
+    cutoff = now() - timedelta(seconds=settings.auto_import_interval_seconds)
+    for source_id in db.scalars(select(Source.id).where(Source.enabled.is_(True))):
+        last_job = db.scalar(
+            select(Job)
+            .where(Job.kind == "auto_import", Job.source_id == source_id)
+            .order_by(Job.created_at.desc(), Job.id.desc())
+            .limit(1)
+        )
+        if last_job and (
+            last_job.status in {"queued", "running"}
+            or (last_job.started_at or last_job.created_at) > cutoff
+        ):
+            continue
+        db.add(Job(kind="auto_import", source_id=source_id))
+    db.commit()
+
+
 def run_one(db, settings):
     job = db.scalar(
         select(Job).where(Job.status == "queued").order_by(Job.created_at, Job.id).limit(1)
@@ -72,11 +94,19 @@ def run_one(db, settings):
     job.status, job.started_at = "running", now()
     db.commit()
     try:
-        if job.kind == "parse":
+        if job.kind in {"parse", "auto_import"}:
             source = db.get(Source, job.source_id)
             if not source or not source.enabled:
                 raise ValueError("Source is disabled or missing")
-            result = parse_job(db, job, source, settings)
+            if job.kind == "auto_import":
+                if not settings.auto_import_enabled or not settings.news_parser_token:
+                    raise ValueError(
+                        "Automatic import requires AUTO_IMPORT_ENABLED and NEWS_PARSER_TOKEN"
+                    )
+                with closing(NewsImportClient(settings)) as client:
+                    result = parse_job(db, job, source, settings, import_client=client)
+            else:
+                result = parse_job(db, job, source, settings)
         elif job.kind == "images":
             article = db.get(Article, job.article_id)
             source = db.get(Source, article.source_id)
@@ -92,6 +122,8 @@ def run_one(db, settings):
         job.status = "partial" if result.get("errors") else "completed"
         if job.kind == "parse" and not result["processed"]:
             job.status = "failed"
+        if job.kind == "auto_import" and not (result["processed"] or result["article_ids"]):
+            job.status = "failed"
     except Exception as exc:
         db.rollback()
         job.status, job.error = "failed", safe_error(exc)
@@ -106,6 +138,8 @@ def main():
     parser.add_argument("--once", action="store_true", help="Process at most one job and exit")
     args = parser.parse_args()
     settings = get_settings()
+    if settings.auto_import_enabled and not settings.news_parser_token:
+        parser.error("NEWS_PARSER_TOKEN is required when AUTO_IMPORT_ENABLED is true")
     logging.basicConfig(level=logging.INFO)
     with worker_lock() as connection:
         with SessionLocal() as db:
@@ -114,6 +148,7 @@ def main():
             if connection is not None:
                 connection.execute(text("SELECT 1"))  # Fail closed if the lock connection died.
             with SessionLocal() as db:
+                enqueue_due_imports(db, settings)
                 worked = run_one(db, settings)
             if args.once:
                 return

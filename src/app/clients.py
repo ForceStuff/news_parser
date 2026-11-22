@@ -157,3 +157,39 @@ class NewsClient:
         if response.status_code != 200:
             raise IntegrationError(f"Cannot verify news: HTTP {response.status_code}")
         return response.json()
+
+
+class NewsImportClient:
+    def __init__(self, settings):
+        self.url = settings.news_service_url.rstrip("/") + "/internal/news/import"
+        self.http = httpx.Client(
+            headers={"X-News-Parser-Token": settings.news_parser_token},
+            timeout=settings.request_timeout,
+            trust_env=False,
+        )
+
+    def close(self) -> None:
+        self.http.close()
+
+    def create(self, payload: dict) -> str:
+        try:
+            response = self.http.post(self.url, json=payload)
+        except httpx.TransportError as exc:
+            raise IntegrationError("News import request failed") from exc
+        if response.status_code != 200:
+            raise IntegrationError(f"News import rejected: HTTP {response.status_code}")
+        try:
+            return str(UUID(response.json()["news_id"]))
+        except (ValueError, KeyError, TypeError) as exc:
+            raise IntegrationError("News service returned an invalid import response") from exc
+
+    def cover(self, news_id: str, content: bytes) -> None:
+        try:
+            response = self.http.put(
+                f"{self.url}/{UUID(news_id)}/cover",
+                files={"file": ("cover.webp", content, "image/webp")},
+            )
+        except httpx.TransportError as exc:
+            raise IntegrationError("Imported news cover request failed") from exc
+        if response.status_code != 204:
+            raise IntegrationError(f"Imported news cover rejected: HTTP {response.status_code}")

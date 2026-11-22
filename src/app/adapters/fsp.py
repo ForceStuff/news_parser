@@ -36,7 +36,11 @@ class FspAdapter:
             except ValueError:
                 continue
             img = link.select_one("img")
-            cover = urljoin(url, img.get("data-src") or img.get("src", "")) if img else None
+            image_url = (img.get("data-src") or img.get("src")) if img else None
+            try:
+                cover = urljoin(url, image_url) if image_url else None
+            except ValueError:
+                cover = None
             articles.setdefault(target, DiscoveredArticle(target, cover))
         if not articles:
             raise ValueError("FSP listing layout changed or no article cards found")
@@ -83,6 +87,21 @@ class FspAdapter:
             url = next_url
         return list(result.values())[:limit]
 
+    def archive(self, fetcher, url: str):
+        url = self.validate_listing(url)
+        seen = set()
+        pages = set()
+        while url:
+            cards, url = self.listing(fetcher.html(url), url)
+            page = frozenset(card.url for card in cards)
+            if page in pages:
+                raise ValueError("FSP archive returned a repeated page")
+            pages.add(page)
+            for card in cards:
+                if card.url not in seen:
+                    seen.add(card.url)
+                    yield card
+
     def parse(self, html: str, url: str, cover_url: str | None = None):
         url = self.validate_article(url)
         soup = BeautifulSoup(html, "html.parser")
@@ -106,8 +125,11 @@ class FspAdapter:
         for candidate in candidates:
             if not candidate:
                 continue
-            target = urljoin(url, candidate)
-            validate_url(target, self.allowed_hosts)
+            try:
+                target = urljoin(url, candidate)
+                validate_url(target, self.allowed_hosts)
+            except ValueError:
+                continue
             if target not in images:
                 images.append(target)
         for tag in content.select("script, style, iframe, form, noscript"):

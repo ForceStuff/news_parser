@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -26,4 +27,5 @@ class Adapter(Protocol):
     def discover(
         self, fetcher, url: str, max_pages: int, limit: int
     ) -> list[DiscoveredArticle]: ...
+    def archive(self, fetcher, url: str) -> Iterator[DiscoveredArticle]: ...
     def parse(self, html: str, url: str, cover_url: str | None = None) -> ParsedArticle: ...

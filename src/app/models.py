@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.types import UTCDateTime
@@ -60,6 +60,7 @@ class ArticleImage(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
+    __table_args__ = (Index("ix_jobs_kind_source_created", "kind", "source_id", "created_at"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     kind: Mapped[str] = mapped_column(String(20), default="parse")
     source_id: Mapped[str | None] = mapped_column(ForeignKey("sources.id"))
@@ -80,3 +81,11 @@ class Export(Base):
     status: Mapped[str] = mapped_column(String(30), default="pending")
     error: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+
+
+class ArticleImport(Base):
+    __tablename__ = "article_imports"
+
+    article_id: Mapped[str] = mapped_column(ForeignKey("articles.id"), primary_key=True)
+    news_id: Mapped[str | None] = mapped_column(String(36))
+    cover_attached: Mapped[bool] = mapped_column(Boolean, default=False)
